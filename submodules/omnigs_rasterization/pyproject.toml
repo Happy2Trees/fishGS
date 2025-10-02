@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omnigs-rasterization"
+version = "0.0.1"
+description = "PyTorch bindings for the OmniGS rasterizer (self-contained)"
+requires-python = ">=3.9"
+
