@@ -22,22 +22,22 @@ def _extra_compile_args() -> dict[str, list[str]]:
 
 
 sources = [
-    PKG_ROOT / "omnigs_rasterization" / "ext.cpp",
-    PKG_ROOT / "src" / "rasterize_points.cu",
-    PKG_ROOT / "cuda_rasterizer" / "rasterizer_impl.cu",
-    PKG_ROOT / "cuda_rasterizer" / "forward.cu",
-    PKG_ROOT / "cuda_rasterizer" / "backward.cu",
+    "omnigs_rasterization/ext.cpp",
+    "src/rasterize_points.cu",
+    "cuda_rasterizer/rasterizer_impl.cu",
+    "cuda_rasterizer/forward.cu",
+    "cuda_rasterizer/backward.cu",
 ]
 
 include_dirs = [
     str(PKG_ROOT),  # so includes like "include/..." and "cuda_rasterizer/..." resolve
-    str(PKG_ROOT / "third_party"),  # contains glm/
+    str(PKG_ROOT / "third_party" / "glm"),  # expose glm headers as <glm/...>
 ]
 
 ext_modules = [
     CUDAExtension(
         name="omnigs_rasterization._C",
-        sources=[str(s) for s in sources],
+        sources=sources,
         include_dirs=include_dirs,
         extra_compile_args=_extra_compile_args(),
     )
@@ -52,4 +52,3 @@ setup(
     cmdclass={"build_ext": BuildExtension},
     zip_safe=False,
 )
-

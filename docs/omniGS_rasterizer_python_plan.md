@@ -12,21 +12,21 @@
   - [x] `omnigs_rasterization/omnigs_rasterization/{ext.cpp,__init__.py}` 추가
   - [x] `omnigs_rasterization/{setup.py,pyproject.toml}` 신규 생성
   - [x] 스모크 스크립트: `omnigs_rasterization/omnigs_rasterization/tests/quickcheck.py`
-- [ ] 파이썬 래퍼 구현(autograd)
-  - [ ] `_RasterizeGaussians` autograd.Function forward/backward 구현
-  - [ ] `_C.rasterize_gaussians`/`_C.rasterize_gaussians_backward` 호출/버퍼 저장
-  - [ ] 인자 상호배타성/유효성/contiguous 검사(3DGS 호환)
-  - [ ] `mark_visible` 파이썬 함수 구현 → `_C.mark_visible` 위임
-- [ ] 기존 파이프라인 연동(API 호환)
-  - [ ] `(render, radii, depth)` 형태로 반환(필요 시 depth는 double-call)
-  - [ ] PINHOLE/LONLAT 카메라 분기 반영(`camera_type`)
+- [x] 파이썬 래퍼 구현(autograd)
+  - [x] `_RasterizeGaussians` autograd.Function forward/backward 구현
+  - [x] `_C.rasterize_gaussians`/`_C.rasterize_gaussians_backward` 호출/버퍼 저장
+  - [x] 인자 상호배타성/유효성/contiguous 검사(3DGS 호환)
+  - [x] `mark_visible` 파이썬 함수 구현 → `_C.mark_visible` 위임
+- [x] 기존 파이프라인 연동(API 호환)
+  - [x] `(render, radii, depth)` 형태로 반환(필요 시 depth는 double-call)
+  - [x] PINHOLE/LONLAT 카메라 분기 반영(`camera_type`)
 
 ### v0 검증 (정합성/안정성)
-- [ ] 빌드 및 스모크 테스트
-  - [ ] `pip install -e submodules/omnigs_rasterization --no-build-isolation`
-  - [ ] `python -m omnigs_rasterization.tests.quickcheck` 모듈 로드 확인
-- [ ] 간단 렌더 스모크
-  - [ ] 무작위 입력으로 PINHOLE/LONLAT, `render_depth=True/False` shape/유효값 확인
+- [x] 빌드 및 스모크 테스트
+  - [x] `pip install -e submodules/omnigs_rasterization --no-build-isolation`
+  - [x] `python -m omnigs_rasterization.tests.quickcheck` 모듈 로드 확인
+- [x] 간단 렌더 스모크
+  - [x] 무작위 입력으로 PINHOLE/LONLAT, `render_depth` 분리(double‑call) 반환 형상/유효값 확인
 - [ ] gradcheck(소규모 샘플)
   - [ ] means3D/opacity/colors/SH 등 일부 파라미터에 대해 수치 미분 검사
 
@@ -41,6 +41,7 @@
 - [x] C++17 지정(cxx/nvcc) — OmniGS 코드 요구 반영
 - [x] GLM 동봉(`third_party/glm`) — 별도 자동탐지/환경변수 필요 없음
 - [x] `TORCH_CUDA_ARCH_LIST` 미설정 시 경고만(성능 권장값 안내)
+- [x] 수학 상수는 GLM 상수 사용(예: `glm::one_over_pi<float>()`, `glm::two_over_pi<float>()`)으로 치환 — 하드코딩/표준 라이브러리 의존 상수 제거
 
 ### 라이선스/주의
 - [ ] 라이선스 고지/문서화: OmniGS(GPLv3), 3DGS(비상업 연구용) 혼용 시 내부 사용/배포 정책 점검
@@ -93,6 +94,12 @@
 - 3DGS 바인딩 예시: `submodules/diff-gaussian-rasterization/ext.cpp`, `.../diff_gaussian_rasterization/__init__.py`, `.../setup.py`
 
 ---
+
+## 변경 기록(요약)
+- PyTorch autograd 래퍼 구현 및 3DGS 호환 API 제공
+- 빌드 스크립트 정리: GLM 헤더 경로 포함, 소스 상대경로화
+- NVCC와 libc 상수 충돌 이슈 해결: GLM 상수(`glm::one_over_pi<float>()`, `glm::two_over_pi<float>()`) 사용으로 교체
+- PINHOLE/LONLAT 스모크 및 기본 backward 스모크 통과(교육용 랜덤 입력)
 
 ## 상세 계획(컨텍스트 유지)
 

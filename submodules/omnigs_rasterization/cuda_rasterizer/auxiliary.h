@@ -25,6 +25,13 @@
 #include "config.h"
 #include "stdio.h"
 
+// Use GLM-provided mathematical constants in device code.
+#ifndef GLM_FORCE_CUDA
+#define GLM_FORCE_CUDA
+#endif
+#include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+
 #define BLOCK_SIZE (BLOCK_X * BLOCK_Y)
 #define NUM_WARPS (BLOCK_SIZE/32)
 
@@ -226,10 +233,12 @@ __forceinline__ __device__ float2 point3ToLonlatPixel(const float3& pt, const in
 
 	float lon = atan2f(pt.x, pt.z);
 	float lat = asinf(pt.y * inv_r);
-	float2 pix = {
-		(lon * M_1_PIf32 + 1.0f) * (width >> 1),
-		(lat * M_2_PIf32 + 1.0f) * (height >> 1)
-	};
+    const float INV_PI = glm::one_over_pi<float>();
+    const float TWO_INV_PI = glm::two_over_pi<float>();
+    float2 pix = {
+        (lon * INV_PI + 1.0f) * (width >> 1),
+        (lat * TWO_INV_PI + 1.0f) * (height >> 1)
+    };
 	return pix;
 }
 
@@ -240,10 +249,9 @@ __forceinline__ __device__ float2 point3ToLonlatScreen(const float4& pt_and_r)
 	float lon = atan2f(pt_and_r.x, pt_and_r.z);
 	float lat = asinf(pt_and_r.y * inv_r);
 
-	float2 scr = {
-		lon * M_1_PIf32,
-		lat * M_2_PIf32
-	};
+    const float INV_PI = glm::one_over_pi<float>();
+    const float TWO_INV_PI = glm::two_over_pi<float>();
+    float2 scr = { lon * INV_PI, lat * TWO_INV_PI };
 	return scr;
 }
 
