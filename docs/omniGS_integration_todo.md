@@ -237,7 +237,8 @@ TODO
 - [x] 비CUDA 단위 테스트: PINHOLE/ERP camera_type 전달 및 tanfov 기본값 검증
 - [x] CUDA 스모크: OmniGS 래스터라이저 GPU forward(색상/깊이) 통과(PINHOLE)
 - [x] 카메라/데이터 파이프라인(ERP) 스모크: dataset→camera_type 전달, ERP 위도 가중 유틸 단위 테스트 추가
-- [x] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 예정(OmniGS C++ 정렬)
+- [x] 손실/정규화(ERP 선택 가중): 구현 및 단위 테스트 완료
+- [x] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 완료(OmniGS C++ 동작 정렬)
 - [x] Optimizer/Scheduler 정렬: Adam 파라미터 그룹(6개) 및 xyz 지수 스케줄 적용, 단위 테스트 추가
 - [x] ERP depth 정규화 비활성 분기 적용(train.py)
 - [x] Densify/Prune 규칙 및 스케줄: OmniGS C++과 동일한 size_threshold/WS·VS/opacity 규칙 적용, 단위 테스트 추가
