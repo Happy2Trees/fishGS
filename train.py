@@ -12,7 +12,7 @@
 import os
 import torch
 from random import randint
-from utils.loss_utils import l1_loss, ssim
+from utils.loss_utils import l1_loss, ssim, erp_latitude_weight_map, weighted_l1, erp_skip_bottom
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
@@ -117,11 +117,26 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
+
+        # Optional ERP bottom skip (OmniGS-aligned behavior)
+        if opt.skip_bottom_ratio > 0.0:
+            image_for_loss = erp_skip_bottom(image, opt.skip_bottom_ratio)
+            gt_for_loss = erp_skip_bottom(gt_image, opt.skip_bottom_ratio)
+        else:
+            image_for_loss = image
+            gt_for_loss = gt_image
+
+        # Optional ERP latitude weighted loss
+        if getattr(viewpoint_cam, "camera_type", 1) == 3 and opt.erp_weighted_loss:
+            H, W = image_for_loss.shape[1], image_for_loss.shape[2]
+            wmap = erp_latitude_weight_map(H, W, device=image_for_loss.device, dtype=image_for_loss.dtype)
+            Ll1 = weighted_l1(image_for_loss, gt_for_loss, wmap)
+        else:
+            Ll1 = l1_loss(image_for_loss, gt_for_loss)
         if FUSED_SSIM_AVAILABLE:
             ssim_value = fused_ssim(image.unsqueeze(0), gt_image.unsqueeze(0))
         else:
-            ssim_value = ssim(image, gt_image)
+            ssim_value = ssim(image_for_loss.unsqueeze(0), gt_for_loss.unsqueeze(0))
 
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim_value)
 
@@ -169,9 +184,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    # Align with OmniGS trainer: use 0 instead of None before threshold
-                    size_threshold = 20 if iteration > opt.opacity_reset_interval else 0
-                    gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
+                    # Use prune_big_point_after_iter threshold; 0 means disabled until >0
+                    use_threshold_after = opt.prune_big_point_after_iter if opt.prune_big_point_after_iter > 0 else opt.opacity_reset_interval
+                    size_threshold = 20 if iteration > use_threshold_after else 0
+                    gaussians.densify_and_prune(
+                        opt.densify_grad_threshold,
+                        opt.densify_min_opacity,
+                        scene.cameras_extent,
+                        size_threshold,
+                        radii,
+                        prune_by_extent=opt.prune_by_extent,
+                    )
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     gaussians.reset_opacity()

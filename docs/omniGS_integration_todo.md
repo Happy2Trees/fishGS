@@ -110,9 +110,9 @@ ERP 유의사항
 - 위도 가중(cosine weight)은 OmniGS C++ 기본 동작이 아닙니다. 필요 시 옵션(opt-in)으로만 제공하고, 기본값은 Off로 유지합니다.
 
 TODO
-- [ ] (옵션) `train.py`에 ERP 선택 가중 손실 분기 추가(기본 Off)
-- [ ] ERP일 때 깊이 항 비활성 분기 반영
-- [ ] λ(dssim) 등 하이퍼는 OmniGS 기본값 노출/설정 가능하도록 `arguments/` 갱신
+- [x] (옵션) `train.py`에 ERP 선택 가중 손실 분기 추가(기본 Off)
+- [x] ERP일 때 깊이 항 비활성 분기 반영
+- [x] λ(dssim) 등 하이퍼는 OmniGS 기본값 노출/설정 가능하도록 `arguments/` 갱신
 
 
 ## 6) 가시성 처리(markVisible)와 성능
@@ -145,7 +145,7 @@ TODO
 - `--lambda_dssim`/`--densify_*`/`--opacity_reset_interval` 등 OmniGS 기본 하이퍼 노출
 
 TODO
-- [ ] `arguments/*.py` 확장 및 `README.md` 사용법 갱신
+- [x] `arguments/*.py` 확장 및 `README.md` 사용법 갱신(일부)
 - [ ] 기본값은 OmniGS 권장값으로 설정, 실험 재현성 위해 seed 인자 정리
 
 
@@ -172,7 +172,7 @@ TODO
   - [ ] (선택) `exist_since_iter` 추가 및 densify 경로 전파
 - 손실/메트릭
   - [x] `utils/loss_utils.py` ERP 위도 가중 옵션 추가(옵션, 기본 Off)
-  - [ ] `train.py` ERP 하단 무시(skip_bottom_ratio) 손실/리포팅 반영(OmniGS 동작 정렬)
+  - [x] `train.py` ERP 하단 무시(skip_bottom_ratio) 손실/리포팅 반영(OmniGS 동작 정렬)
   - [ ] `metrics.py`(선택) 가중 PSNR/L1 병행 보고 옵션
 - 설정/문서
   - [ ] `arguments/*` 새 인자 추가, `README.md`/`docs` 사용법 갱신
@@ -199,7 +199,7 @@ TODO
 - [x] 비CUDA 단위 테스트: PINHOLE/ERP camera_type 전달 및 tanfov 기본값 검증
 - [x] CUDA 스모크: OmniGS 래스터라이저 GPU forward(색상/깊이) 통과(PINHOLE)
 - [x] 카메라/데이터 파이프라인(ERP) 스모크: dataset→camera_type 전달, ERP 위도 가중 유틸 단위 테스트 추가
-- [ ] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 예정(OmniGS C++ 정렬)
+- [x] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 예정(OmniGS C++ 정렬)
 - [x] Optimizer/Scheduler 정렬: Adam 파라미터 그룹(6개) 및 xyz 지수 스케줄 적용, 단위 테스트 추가
 - [x] ERP depth 정규화 비활성 분기 적용(train.py)
 
