@@ -19,7 +19,7 @@ from scene import Scene, GaussianModel
 from utils.general_utils import safe_state, get_expon_lr_func
 import uuid
 from tqdm import tqdm
-from utils.image_utils import psnr
+from utils.image_utils import psnr, weighted_psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
 try:
@@ -180,7 +180,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp), dataset.train_test_exp)
+            training_report(
+                tb_writer,
+                iteration,
+                Ll1,
+                loss,
+                l1_loss,
+                iter_start.elapsed_time(iter_end),
+                testing_iterations,
+                scene,
+                render,
+                (pipe, background, 1., SPARSE_ADAM_AVAILABLE, None, dataset.train_test_exp),
+                dataset.train_test_exp,
+                skip_bottom_ratio=opt.skip_bottom_ratio,
+                erp_weighted_metrics=opt.erp_weighted_metrics,
+            )
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -244,7 +258,7 @@ def prepare_output_and_logger(args):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs, train_test_exp):
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene: Scene, renderFunc, renderArgs, train_test_exp, *, skip_bottom_ratio: float = 0.0, erp_weighted_metrics: bool = False):
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -253,31 +267,58 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
-        validation_configs = ({'name': 'test', 'cameras' : scene.getTestCameras()}, 
-                              {'name': 'train', 'cameras' : [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
+        validation_configs = ({'name': 'test', 'cameras': scene.getTestCameras()},
+                              {'name': 'train', 'cameras': [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]})
 
         for config in validation_configs:
             if config['cameras'] and len(config['cameras']) > 0:
                 l1_test = 0.0
                 psnr_test = 0.0
+                # optional weighted metrics for ERP
+                l1_w_test = 0.0
+                psnr_w_test = 0.0
+
                 for idx, viewpoint in enumerate(config['cameras']):
                     image = torch.clamp(renderFunc(viewpoint, scene.gaussians, *renderArgs)["render"], 0.0, 1.0)
                     gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
                     if train_test_exp:
                         image = image[..., image.shape[-1] // 2:]
                         gt_image = gt_image[..., gt_image.shape[-1] // 2:]
+
+                    # Apply skip-bottom cropping to evaluation if requested
+                    if skip_bottom_ratio > 0.0:
+                        image_eval = erp_skip_bottom(image, skip_bottom_ratio)
+                        gt_eval = erp_skip_bottom(gt_image, skip_bottom_ratio)
+                    else:
+                        image_eval = image
+                        gt_eval = gt_image
+
                     if tb_writer and (idx < 5):
-                        tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image[None], global_step=iteration)
+                        tb_writer.add_images(config['name'] + "_view_{}/render".format(viewpoint.image_name), image_eval[None], global_step=iteration)
                         if iteration == testing_iterations[0]:
-                            tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_image[None], global_step=iteration)
-                    l1_test += l1_loss(image, gt_image).mean().double()
-                    psnr_test += psnr(image, gt_image).mean().double()
+                            tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name), gt_eval[None], global_step=iteration)
+                    l1_test += l1_loss(image_eval, gt_eval).mean().double()
+                    psnr_test += psnr(image_eval, gt_eval).mean().double()
+
+                    if erp_weighted_metrics and getattr(viewpoint, "camera_type", 1) == 3:
+                        H, W = image_eval.shape[1], image_eval.shape[2]
+                        wmap = erp_latitude_weight_map(H, W, device=image_eval.device, dtype=image_eval.dtype)
+                        l1_w_test += weighted_l1(image_eval, gt_eval, wmap).mean().double()
+                        psnr_w_test += weighted_psnr(image_eval.unsqueeze(0), gt_eval.unsqueeze(0), wmap).mean().double()
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])          
-                print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
+                msg = "\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test)
+                if erp_weighted_metrics and any(getattr(v, "camera_type", 1) == 3 for v in config['cameras']):
+                    l1_w_test /= len([v for v in config['cameras'] if getattr(v, "camera_type", 1) == 3])
+                    psnr_w_test /= len([v for v in config['cameras'] if getattr(v, "camera_type", 1) == 3])
+                    msg += " | wL1 {} wPSNR {}".format(l1_w_test, psnr_w_test)
+                print(msg)
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
+                    if erp_weighted_metrics and any(getattr(v, "camera_type", 1) == 3 for v in config['cameras']):
+                        tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_weighted', l1_w_test, iteration)
+                        tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr_weighted', psnr_w_test, iteration)
 
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)

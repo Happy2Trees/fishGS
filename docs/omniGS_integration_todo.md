@@ -153,8 +153,8 @@ TODO
 - (옵션) 뷰어/디버깅 용도에서만 `markVisible` 사용.
 
 TODO
-- [ ] `omnigs_rasterization`의 `markVisible`을 유틸로 노출하고, 필요 시 디버그에 활용
-- [ ] Densify 통계는 `visibility_filter=(radii>0)` 기준 유지
+- [x] `omnigs_rasterization`의 `markVisible`을 유틸로 노출하고, 필요 시 디버그에 활용
+- [x] Densify 통계는 `visibility_filter=(radii>0)` 기준 유지
 
 
 ## 7) 체크포인트/로깅/평가
@@ -162,8 +162,8 @@ TODO
 - 평가 루틴에서 ERP일 때 PSNR/L1는 동일 계산, 다만 필요 시 위도 가중 버전 병행 보고.
 
 TODO
-- [ ] 테스트 이터레이션/세이브 이터레이션 유지, ERP일 때 추가 지표(가중 PSNR 등) 선택 제공
-- [ ] PLY 저장/로드 포맷은 3DGS와 호환 유지(OmniGS와 동일 필드명 확인)
+- [x] 테스트 이터레이션/세이브 이터레이션 유지, ERP일 때 추가 지표(가중 PSNR 등) 선택 제공
+- [x] PLY 저장/로드 포맷은 3DGS와 호환 유지(OmniGS와 동일 필드명 확인)
 
 
 ## 8) CLI/설정 항목 정리(새 인자)
@@ -242,6 +242,9 @@ TODO
 - [x] Optimizer/Scheduler 정렬: Adam 파라미터 그룹(6개) 및 xyz 지수 스케줄 적용, 단위 테스트 추가
 - [x] ERP depth 정규화 비활성 분기 적용(train.py)
 - [x] Densify/Prune 규칙 및 스케줄: OmniGS C++과 동일한 size_threshold/WS·VS/opacity 규칙 적용, 단위 테스트 추가
+- [x] 가시성 처리: markVisible 래핑/노출, radii 기반 visibility_filter 유지, 단위 테스트 추가
+- [x] 평가 확장: ERP 가중 L1/PSNR 선택 보고 옵션 및 TB 로깅 추가
+- [x] PLY 호환: OmniGS C++와 동일 필드명(x,y,z,nx,ny,nz,f_dc_*,f_rest_*,opacity,scale_*,rot_*) 사용 확인 및 단위 테스트 추가(tests/test_ply_format_compat.py)
 
 
 ## 부록: 주요 차이 정리(요약)

@@ -100,6 +100,7 @@ class OptimizationParams(ParamGroup):
         # ERP options
         self.skip_bottom_ratio = 0.0
         self.erp_weighted_loss = False
+        self.erp_weighted_metrics = False
         self.depth_l1_weight_init = 1.0
         self.depth_l1_weight_final = 0.01
         self.random_background = False

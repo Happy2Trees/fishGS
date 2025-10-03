@@ -13,6 +13,7 @@ import torch
 import math
 from typing import TYPE_CHECKING
 from omnigs_rasterization import GaussianRasterizationSettings, GaussianRasterizer
+from omnigs_rasterization import mark_visible as _omnigs_mark_visible
 from utils.sh_utils import eval_sh
 
 if TYPE_CHECKING:  # avoid heavy import at runtime
@@ -138,3 +139,18 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
 def GaussianModel(*args, **kwargs):  
     from scene.gaussian_model import GaussianModel as _GM
     return _GM(*args, **kwargs)
+
+
+def mark_visible(viewpoint_camera, positions: torch.Tensor) -> torch.Tensor:
+    """Call OmniGS rasterizer's markVisible with the current camera.
+
+    - Returns a boolean tensor of shape (P,) indicating visibility.
+    - For ERP/LONLAT cameras (camera_type==3), all points are visible by design.
+    """
+    camera_type = getattr(viewpoint_camera, "camera_type", 1)
+    return _omnigs_mark_visible(
+        positions,
+        viewpoint_camera.world_view_transform,
+        viewpoint_camera.full_proj_transform,
+        int(camera_type),
+    )
