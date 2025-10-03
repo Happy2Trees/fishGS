@@ -10,6 +10,12 @@
 - Gaussian densify & prune 규칙/스케줄 반영 및 가시성 처리
 - 손실/정규화(ERP 가중 포함), 로깅/체크포인트 정리
 
+## 정합성 보완(요약)
+- 원칙: C++ 레퍼런스와 동작 정합성 최우선. 기본값은 OmniGS 기준 유지, 옵션성 개선은 명시적 opt-in만 허용.
+- 핵심 반영 위치: Optimizer/스케줄(섹션 3), Densify/Prune(섹션 4), 손실/평가/리포팅(섹션 5·7), 가시성(섹션 6), CLI/설정(섹션 8·10).
+- 과잉(옵션화): ERP latitude cosine 가중, Python 노출 보정 — 기본 Off 유지.
+- 기타 잔여 항목은 11) 정합성 보완(참조)에서 인덱스 형태로 안내.
+
 
 ## 0) 현재 상태 요약
 - 3DGS 파이썬 파이프라인은 원본 구조 유지. 렌더러는 `diff_gaussian_rasterization`를 사용 중.
@@ -95,11 +101,38 @@ OmniGS 규칙 요약(C++ 참조)
 - exist-since-iter(생성 이터레이션) 추적: OmniGS는 신규/가시성 기반 후처리에서 참조. 파이썬에도 경량 추가 가능(선택).
 - ERP에서 `markVisible`이 전 True인 특성으로 인한 과잉 densify 방지: radii 기반 필터 유지 권장.
 
+정합성 보완 반영(섹션 11 요지 적용)
+- 기본 파라미터 정렬
+  - `densify_min_opacity = 0.005` 기본값 노출. 불투명도가 너무 낮은 포인트는 densify 후보에서 제외.
+  - `prune_by_extent = True`를 기본 적용. `scaling > k*extent` 조건(k≈0.1)의 범위 초과 포인트는 prune 대상으로 고려.
+  - `prune_big_point_after_iter = 0`(비활성) 기본. 값이 0보다 크면 해당 이터레이션 이후부터 extent 기반 prune 활성.
+  - `size_threshold`는 임계 이전 구간에서 `0`을 사용(None→0)하여 OmniGS와 동일한 경계조건 유지.
+- 스케줄/타이밍
+  - densify/prune 실행 주기, 시작/종료 이터레이션을 OmniGS C++ 기본과 동기화. opacity reset 주기와 white background 초기 reset 동작 포함.
+- 가시성/통계
+  - ERP에서는 `markVisible` 결과를 사용하지 않고, `radii>0` 기반 `visibility_filter`로 densify 통계를 집계.
+  - `percent_dense`와 scene extent 스케일을 동일하게 계산하여 임계치 비교 일관성 확보.
+
+기본값(C++ 기준)
+- 스케줄 파라미터
+  - `densify_from_iter = 500`
+  - `densify_until_iter = 15000`
+  - `densification_interval = 100`
+  - `opacity_reset_interval = 3000`
+- 임계/하이퍼
+  - `densify_grad_threshold = 0.0002`
+  - `densify_min_opacity = 0.005`
+  - `percent_dense = 0.01`
+  - `max_screen_size(size_threshold) = 0` (초기), `20` (iter > `opacity_reset_interval` 시)
+  - `prune_by_extent = True` (기본)
+
 TODO
-- [ ] `train.py:1` densify 스케줄(시작/종료/interval)과 임계치들을 OmniGS 기본값으로 동기화
-- [ ] `scene/gaussian_model.py`의 `densify_and_prune` 로직이 OmniGS와 조건식/임계치/WS/VS 비교 로직 일치하도록 재확인
-- [ ] opacity reset 주기와 white background 특수케이스(초기 reset) 반영 확인
+- [x] `train.py:1` densify 스케줄(시작/종료/interval)과 임계치들을 OmniGS 기본값으로 동기화
+  - `compute_size_threshold(iter, prune_big_point_after_iter)` 헬퍼 추가: 임계치>0이고 iter>임계치일 때만 20, 아니면 0
+- [x] `scene/gaussian_model.py`의 `densify_and_prune` 로직이 OmniGS와 조건식/임계치/WS/VS 비교 로직 일치하도록 재확인
+- [x] opacity reset 주기와 white background 특수케이스(초기 reset) 반영 확인
 - [ ] (선택) `exist_since_iter` 텐서 추가 및 densify 시 전파(OmniGS와 동일 형태로 확장)
+- [x] CLI 인자(`--densify_min_opacity`, `--prune_by_extent`, `--prune_big_point_after_iter`)를 학습 루프에 실제로 연결
 
 
 ## 5) 손실/정규화(ERP 선택 가중)
@@ -175,20 +208,25 @@ TODO
   - [x] `train.py` ERP 하단 무시(skip_bottom_ratio) 손실/리포팅 반영(OmniGS 동작 정렬)
   - [ ] `metrics.py`(선택) 가중 PSNR/L1 병행 보고 옵션
 - 설정/문서
-  - [ ] `arguments/*` 새 인자 추가, `README.md`/`docs` 사용법 갱신
+- [x] `arguments/*` 새 인자 추가, `README.md`/`docs` 사용법 갱신
   - [ ] `requirements.txt`에 `submodules/omnigs_rasterization` 설치 안내(개발환경 문서화)
 
 
-## 11) 정합성 보완(계획)
-- 과잉(옵션화 필요)
-  - ERP latitude cosine 가중: OmniGS C++ 기본 동작 아님 → 옵션 제공(기본 Off)
-  - Python 노출 보정(exposure) 학습: OmniGS C++에 없음 → 기본 Off 권장
-- 누락(정합성 보완 필요)
-  - 손실·리포팅: ERP `skip_bottom_ratio` 적용(학습/평가 모두) — OmniGS C++ 동작과 일치시키기
-  - densify/prune 파라미터 정렬: `densify_min_opacity`(기본 0.005), `prune_by_extent` 토글, `prune_big_point_after_iter` 시점 적용
-  - (선택) `exist_since_iter` 유지·전파 로직 추가(OmniGS C++에 존재) — 우선순위 낮음
-  - (선택) 가우스 피라미드 트레이닝(times_of_use, viewer scaling 등) 관련 파라미터 — Python 포트에서는 생략 또는 별도 플래그로 제공
-  - (선택) 로깅: `training_report_interval`/이미지 기록(렌더/GT/loss) — 필요 시 최소 subset만 반영
+## 11) 정합성 보완(참조)
+- 원칙: C++ 레퍼런스와 동작 정합성 최우선. 세부 사항은 각 섹션에 통합 반영.
+- 항목별 위치 안내
+  - Optimizer/스케줄: 섹션 3
+  - Densify/Prune: 섹션 4
+  - 손실/평가/리포팅: 섹션 5, 7
+  - 가시성 처리: 섹션 6
+  - CLI/설정 및 체크리스트: 섹션 8, 10
+- 과잉(옵션화)
+  - ERP latitude cosine 가중: 섹션 5, 기본 Off
+  - Python 노출 보정(exposure) 학습: 미지원, 기본 Off 권장
+- 잔여 TODO(필요 시)
+  - (선택) `exist_since_iter` 유지·전파 로직: 섹션 4 참조
+  - (선택) 가우스 피라미드/뷰어 관련 파라미터: 포트에서는 생략 또는 별도 플래그로 제공
+  - (선택) 로깅 최소 subset: `training_report_interval` 및 핵심 이미지 기록만 유지(섹션 7)
 
 ## 12) 검증 플랜(스모크 → 기능)
 - 스모크: 무작위 입력으로 PINHOLE/ERP 각각 forward/backward 통과, 출력 텐서 형상/유한성 체크
@@ -202,6 +240,7 @@ TODO
 - [x] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 예정(OmniGS C++ 정렬)
 - [x] Optimizer/Scheduler 정렬: Adam 파라미터 그룹(6개) 및 xyz 지수 스케줄 적용, 단위 테스트 추가
 - [x] ERP depth 정규화 비활성 분기 적용(train.py)
+- [x] Densify/Prune 규칙 및 스케줄: OmniGS C++과 동일한 size_threshold/WS·VS/opacity 규칙 적용, 단위 테스트 추가
 
 
 ## 부록: 주요 차이 정리(요약)

@@ -40,6 +40,14 @@ try:
 except:
     SPARSE_ADAM_AVAILABLE = False
 
+def compute_size_threshold(iteration: int, prune_big_point_after_iter: int) -> int:
+    """OmniGS schedule for big-point prune threshold.
+    Returns screen-size threshold (pixels) used to prune very large points.
+    Enabled only after prune_big_point_after_iter (>0 and iteration > threshold).
+    """
+    return 20 if (prune_big_point_after_iter > 0 and iteration > prune_big_point_after_iter) else 0
+
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
@@ -184,9 +192,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    # Use prune_big_point_after_iter threshold; 0 means disabled until >0
-                    use_threshold_after = opt.prune_big_point_after_iter if opt.prune_big_point_after_iter > 0 else opt.opacity_reset_interval
-                    size_threshold = 20 if iteration > use_threshold_after else 0
+                    # OmniGS rule: enable big-point pruning only after prune_big_point_after_iter (>0)
+                    size_threshold = compute_size_threshold(iteration, opt.prune_big_point_after_iter)
                     gaussians.densify_and_prune(
                         opt.densify_grad_threshold,
                         opt.densify_min_opacity,
