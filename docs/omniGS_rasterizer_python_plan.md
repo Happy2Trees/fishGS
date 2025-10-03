@@ -25,12 +25,16 @@
 - [x] 빌드 및 스모크 테스트
   - [x] `pip install -e submodules/omnigs_rasterization --no-build-isolation`
   - [x] `python -m omnigs_rasterization.tests.quickcheck` 모듈 로드 확인
-- [x] 간단 렌더 스모크
-  - [x] 무작위 입력으로 PINHOLE/LONLAT, `render_depth` 분리(double‑call) 반환 형상/유효값 확인
+- [x] 간단 렌더 스모크(ERP 중심)
+  - [x] LONLAT(ERP) 경로 전/후방 스모크: 무작위 입력으로 `(color, radii, depth)` 형상/유효값 확인(컬러 기준 backward 통과)
+  - [x] 인자 검증: `sh`/`colors_precomp` 및 `(scales,rotations)`/`cov3D_precomp` 상호배타 체크
+  - [x] `mark_visible` LONLAT 경로 확인(전 샘플 visible)
+  - 참고: PINHOLE 경로는 선택 검증(필수 아님)
 - [ ] gradcheck(소규모 샘플)
   - [ ] means3D/opacity/colors/SH 등 일부 파라미터에 대해 수치 미분 검사
 
 ### v1 성능 (후속 최적화)
+- 본 작업 범위 밖(위험도 관계로 미진행). TODO 항목만 유지.
 - [ ] 단일 패스 color+depth 동시 출력(geometry/binning 재사용)
 - [ ] 프로파일링/성능 수치화 및 회귀 테스트
 
@@ -75,6 +79,7 @@
   - backward 반환 순서: `(dL_dmeans2D, dL_dcolors, dL_dopacity, dL_dmeans3D, dL_dcov3D, dL_dsh, dL_dscales, dL_drotations)`
 - 카메라: `camera_type`=1(PINHOLE), 3(LONLAT)
 - depth: v0는 `render_depth=True` 시 color에 depth 합성 → 파이썬 래퍼에서 double-call로 분리 제공
+  - 주의: LONLAT(ERP) 카메라에서는 네이티브 `render_depth` 경로가 없으므로, 현재 래퍼의 `depth` 반환은 의미적 깊이를 보장하지 않음(형상/유효값만 보장). 학습 시 깊이 정규화 항 사용 시 비활성/대응 필요.
 
 ---
 
@@ -83,6 +88,7 @@
 - 바인딩: `submodules/omnigs_rasterization/omnigs_rasterization/ext.cpp`
 - 파이썬 래퍼: `submodules/omnigs_rasterization/omnigs_rasterization/__init__.py`
 - 스모크: `submodules/omnigs_rasterization/omnigs_rasterization/tests/quickcheck.py`
+- ERP 스모크: `submodules/omnigs_rasterization/omnigs_rasterization/tests/test_erp_wrapper.py`
 - 복사된 헤더/API: `submodules/omnigs_rasterization/include/rasterize_points.h`
 - 복사된 커널: `submodules/omnigs_rasterization/src/rasterize_points.cu`, `submodules/omnigs_rasterization/cuda_rasterizer/*.cu|*.h`
 
@@ -99,7 +105,8 @@
 - PyTorch autograd 래퍼 구현 및 3DGS 호환 API 제공
 - 빌드 스크립트 정리: GLM 헤더 경로 포함, 소스 상대경로화
 - NVCC와 libc 상수 충돌 이슈 해결: GLM 상수(`glm::one_over_pi<float>()`, `glm::two_over_pi<float>()`) 사용으로 교체
-- PINHOLE/LONLAT 스모크 및 기본 backward 스모크 통과(교육용 랜덤 입력)
+- PINHOLE/LONLAT 스모크 통과(ERP 중심), 기본 backward 스모크 통과(컬러 기준)
+- ERP 전용 통합 테스트 추가: `omnigs_rasterization/tests/test_erp_wrapper.py`
 
 ## 상세 계획(컨텍스트 유지)
 
