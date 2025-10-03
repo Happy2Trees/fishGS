@@ -127,7 +127,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # Depth regularization
         Ll1depth_pure = 0.0
-        if depth_l1_weight(iteration) > 0 and viewpoint_cam.depth_reliable:
+        # Disable depth regularization for ERP/LONLAT cameras (OmniGS rule)
+        is_erp_cam = getattr(viewpoint_cam, "camera_type", 1) == 3
+        if depth_l1_weight(iteration) > 0 and viewpoint_cam.depth_reliable and not is_erp_cam:
             invDepth = render_pkg["depth"]
             mono_invdepth = viewpoint_cam.invdepthmap.cuda()
             depth_mask = viewpoint_cam.depth_mask.cuda()
@@ -167,7 +169,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
 
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
-                    size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                    # Align with OmniGS trainer: use 0 instead of None before threshold
+                    size_threshold = 20 if iteration > opt.opacity_reset_interval else 0
                     gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold, radii)
                 
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):

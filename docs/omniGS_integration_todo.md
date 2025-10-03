@@ -74,9 +74,13 @@ OmniGS 파라미터 그룹(기본 Adam)
 - `scene/gaussian_model.py:1`의 그룹 구성/스케줄은 OmniGS와 거의 동일. 다만, SparseAdam 옵션이 있는데, OmniGS 기준은 Adam 고정. 유지/선택 옵션으로 두되, 기본은 Adam 권장.
 
 TODO
-- [ ] `scene/gaussian_model.py` 학습 설정이 OmniGS 그룹/스케줄과 정확히 일치하는지 재확인(계수/이름/초기값)
-- [ ] `train.py:1`의 `update_learning_rate` 호출 타이밍/반환값 사용 정합성 확인
-- [ ] (옵션) SparseAdam 경로는 플래그 유지하되 기본 비활성(OmniGS 동작에 맞춤)
+- [x] `scene/gaussian_model.py` 학습 설정이 OmniGS 그룹/스케줄과 정확히 일치하는지 재확인(계수/이름/초기값)
+  - Adam 파라미터 그룹 6개 구성/학습률 동일 확인, 지수 스케줄은 xyz만 적용
+  - 단위 테스트 추가: `tests/test_optimizer_scheduler_omnigs.py`
+- [x] `train.py`의 `update_learning_rate` 호출 타이밍/반환값 사용 정합성 확인
+  - 매 이터레이션 직후 호출해 xyz 그룹 lr 갱신(반환값은 로깅 외 미사용 — C++과 동일 패턴)
+- [x] (옵션) SparseAdam 경로는 플래그 유지하되 기본 비활성(OmniGS 동작에 맞춤)
+  - 기본 옵티마이저는 Adam, `--optimizer_type sparse_adam` 명시 시에만 사용
 
 
 ## 4) Gaussian densify & prune 규칙/스케줄
@@ -160,8 +164,11 @@ TODO
   - [x] `scene/cameras.py` `camera_type` 필드 추가, ERP 초기화 경로
   - [x] `scene/dataset_readers.py` ERP 데이터셋 처리 및 카메라 타입 설정
 - 학습 루프/옵티마이저/스케줄
-  - [ ] `train.py` OmniGS 스케줄/den&prune 타이밍 동기화, ERP depth 비활성 분기
-  - [ ] `scene/gaussian_model.py` 파라미터 그룹/스케줄 값 재점검(OmniGS와 일치)
+  - [x] `train.py` OmniGS 스케줄/den&prune 타이밍 동기화, ERP depth 비활성 분기
+    - 스케줄: `update_learning_rate` 호출로 xyz 그룹 지수 스케줄 적용(OmniGS C++과 일치)
+    - ERP depth: `camera_type==3`에서 depth L1 비활성 분기 추가
+    - densify/prune: `size_threshold`를 임계 전 `0` 사용으로 정렬(None → 0)
+  - [x] `scene/gaussian_model.py` 파라미터 그룹/스케줄 값 재점검(OmniGS와 일치)
   - [ ] (선택) `exist_since_iter` 추가 및 densify 경로 전파
 - 손실/메트릭
   - [x] `utils/loss_utils.py` ERP 위도 가중 옵션 추가(옵션, 기본 Off)
@@ -193,6 +200,8 @@ TODO
 - [x] CUDA 스모크: OmniGS 래스터라이저 GPU forward(색상/깊이) 통과(PINHOLE)
 - [x] 카메라/데이터 파이프라인(ERP) 스모크: dataset→camera_type 전달, ERP 위도 가중 유틸 단위 테스트 추가
 - [ ] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 예정(OmniGS C++ 정렬)
+- [x] Optimizer/Scheduler 정렬: Adam 파라미터 그룹(6개) 및 xyz 지수 스케줄 적용, 단위 테스트 추가
+- [x] ERP depth 정규화 비활성 분기 적용(train.py)
 
 
 ## 부록: 주요 차이 정리(요약)
