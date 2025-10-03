@@ -36,6 +36,7 @@ class CameraInfo(NamedTuple):
     width: int
     height: int
     is_test: bool
+    camera_type: int  # 1: PINHOLE, 3: LONLAT/ERP
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -109,9 +110,11 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
         image_name = extr.name
         depth_path = os.path.join(depths_folder, f"{extr.name[:-n_remove]}.png") if depths_folder != "" else ""
 
+        # camera_type is inferred at scene-level to keep consistency across views
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, depth_params=depth_params,
                               image_path=image_path, image_name=image_name, depth_path=depth_path,
-                              width=width, height=height, is_test=image_name in test_cam_names_list)
+                              width=width, height=height, is_test=image_name in test_cam_names_list,
+                              camera_type=1)
         cam_infos.append(cam_info)
 
     sys.stdout.write('\n')
@@ -141,6 +144,57 @@ def storePly(path, xyz, rgb):
     vertex_element = PlyElement.describe(elements, 'vertex')
     ply_data = PlyData([vertex_element])
     ply_data.write(path)
+
+def _infer_camera_type(path: str, images_folder: str) -> int:
+    """Infer camera type: 1 for PINHOLE, 3 for ERP/LONLAT.
+    Priority:
+      - camera_type.txt/json marker under scene root
+      - heuristic from path keyword
+      - heuristic from first image aspect ratio (~2:1)
+    """
+    # file markers
+    txt_file = os.path.join(path, "camera_type.txt")
+    if os.path.isfile(txt_file):
+        try:
+            s = open(txt_file, "r", encoding="utf-8").read().strip().lower()
+            if s in {"3", "erp", "lonlat", "equirect", "equirectangular"}:
+                return 3
+            return 1
+        except Exception:
+            pass
+    json_file = os.path.join(path, "camera_type.json")
+    if os.path.isfile(json_file):
+        try:
+            with open(json_file, "r", encoding="utf-8") as f:
+                obj = json.load(f)
+            v = str(obj.get("camera_type", "1")).lower()
+            if v in {"3", "erp", "lonlat", "equirect", "equirectangular"}:
+                return 3
+        except Exception:
+            pass
+    # path keywords
+    low = path.lower()
+    if any(k in low for k in ["lonlat", "erp", "ricoh360", "360roam", "theta360", "equirect"]):
+        return 3
+    # aspect ratio check on first image
+    try:
+        filelist = []
+        if os.path.isdir(images_folder):
+            for name in os.listdir(images_folder):
+                if name.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".tiff")):
+                    filelist.append(os.path.join(images_folder, name))
+            filelist.sort()
+        if filelist:
+            from PIL import Image
+            with Image.open(filelist[0]) as im:
+                w, h = im.size
+            ratio = w / max(1, h)
+            if 1.95 <= ratio <= 2.05:
+                return 3
+    except Exception:
+        pass
+    return 1
+
 
 def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
     try:
@@ -191,10 +245,14 @@ def readColmapSceneInfo(path, images, depths, eval, train_test_exp, llffhold=8):
         test_cam_names_list = []
 
     reading_dir = "images" if images == None else images
+    # Infer camera type once for the scene
+    camera_type = _infer_camera_type(path, os.path.join(path, reading_dir))
     cam_infos_unsorted = readColmapCameras(
         cam_extrinsics=cam_extrinsics, cam_intrinsics=cam_intrinsics, depths_params=depths_params,
         images_folder=os.path.join(path, reading_dir), 
         depths_folder=os.path.join(path, depths) if depths != "" else "", test_cam_names_list=test_cam_names_list)
+    # patch camera_type for all views to keep consistent behavior
+    cam_infos_unsorted = [c._replace(camera_type=camera_type) for c in cam_infos_unsorted]
     cam_infos = sorted(cam_infos_unsorted.copy(), key = lambda x : x.image_name)
 
     train_cam_infos = [c for c in cam_infos if train_test_exp or not c.is_test]
@@ -266,7 +324,8 @@ def readCamerasFromTransforms(path, transformsfile, depths_folder, white_backgro
 
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX,
                             image_path=image_path, image_name=image_name,
-                            width=image.size[0], height=image.size[1], depth_path=depth_path, depth_params=None, is_test=is_test))
+                            width=image.size[0], height=image.size[1], depth_path=depth_path, depth_params=None, is_test=is_test,
+                            camera_type=1))
             
     return cam_infos
 

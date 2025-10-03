@@ -34,6 +34,14 @@ COPY requirements.txt .
 RUN apt-get remove -y python3-blinker || true
 RUN pip install -r requirements.txt
 
+# Install local extensions (editable) after dependencies
+# - simple-knn
+# - omnigs_rasterization
+COPY submodules/simple-knn submodules/simple-knn
+COPY submodules/omnigs_rasterization submodules/omnigs_rasterization
+RUN pip install -e submodules/simple-knn && \
+    pip install -e submodules/omnigs_rasterization
+
 # WORKDIR /temp
 # # (선택사항) Python 의존성이 명시된 파일이 있다면 복사 후 설치
 # COPY lib_render ./lib_render/

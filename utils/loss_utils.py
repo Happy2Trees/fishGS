@@ -89,3 +89,56 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
 def fast_ssim(img1, img2):
     ssim_map = FusedSSIMMap.apply(C1, C2, img1, img2)
     return ssim_map.mean()
+
+
+# --- ERP latitude weighting utilities ---
+def erp_latitude_weight_map(height: int, width: int, device=None, dtype=None) -> torch.Tensor:
+    """Return a latitude cosine weight map for ERP images.
+    Shape: (1, 1, H, W). weight(y) = cos(lat), lat in [-pi/2, pi/2].
+    """
+    if dtype is None:
+        dtype = torch.float32
+    yy = torch.arange(height, device=device, dtype=dtype) + 0.5
+    lat = (yy / height) * torch.pi - (torch.pi / 2.0)  # [-pi/2, pi/2]
+    w = torch.cos(lat).clamp(min=0.0)  # (H,)
+    w2d = w[:, None].expand(height, width)  # (H, W)
+    return w2d.unsqueeze(0).unsqueeze(0)
+
+def weighted_l1(network_output: torch.Tensor, gt: torch.Tensor, weight_map: torch.Tensor) -> torch.Tensor:
+    """Compute weighted L1 with per-pixel weights. weight_map can be (1,1,H,W) or (H,W).
+    Broadcasts across channel.
+    """
+    if weight_map.dim() == 2:
+        weight_map = weight_map.unsqueeze(0).unsqueeze(0)
+    if weight_map.dim() == 3:
+        weight_map = weight_map.unsqueeze(0)
+    # network_output, gt: (C,H,W) or (N,C,H,W)
+    if network_output.dim() == 3:
+        network_output = network_output.unsqueeze(0)
+        gt = gt.unsqueeze(0)
+    l1 = torch.abs(network_output - gt)
+    # sum over channel, average spatial with weights
+    denom = torch.clamp(weight_map.sum(dim=(-2, -1), keepdim=True), min=1e-8)
+    loss = (l1 * weight_map).sum(dim=(-2, -1), keepdim=True) / denom
+    return loss.mean()
+
+def erp_skip_bottom(img: torch.Tensor, ratio: float) -> torch.Tensor:
+    """Crop out the bottom portion of an image by ratio.
+    Accepts (C,H,W) or (N,C,H,W). No-op if ratio<=0 or computed pixels==0.
+    """
+    if ratio <= 0.0:
+        return img
+    if img.dim() == 3:
+        C, H, W = img.shape
+        pix = int(round(H * ratio))
+        if pix <= 0:
+            return img
+        return img[:, : H - pix, :]
+    elif img.dim() == 4:
+        N, C, H, W = img.shape
+        pix = int(round(H * ratio))
+        if pix <= 0:
+            return img
+        return img[:, :, : H - pix, :]
+    else:
+        return img

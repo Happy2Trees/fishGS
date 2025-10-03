@@ -2,6 +2,8 @@
 
 본 문서는 현재 3DGS 원본 파이프라인을 기반으로, 구현 완료된 `submodules/omnigs_rasterization` 래스터라이저와 `submodules/OmniGS` C++ 레퍼런스를 참고하여 Python 파이프라인을 OmniGS 규칙에 맞게 이식/정렬하기 위한 큰 파트별 설계와 TODO 체크리스트를 제공합니다.
 
+중요: 본 통합의 최우선 목표는 OmniGS C++ 레퍼런스 구현과의 동작 정합성(behavior parity)입니다. 옵션성 개선(예: ERP latitude cosine 가중)은 기본값에서 비활성화하고, 명시적 opt-in으로만 제공합니다. C++과 상충하는 변경은 지양합니다.
+
 핵심 포인트는 다음 4가지입니다.
 - 렌더러 계층 교체 및 카메라 모델(LONLAT/ERP 포함) 반영
 - Optimizer/스케줄러 그룹과 하이퍼파라미터 정책을 OmniGS에 정렬
@@ -44,12 +46,13 @@ TODO
 적용 원칙
 - 카메라 인스턴스에 `camera_type` 필드를 추가하여 렌더러 설정에 전달.
 - ERP 데이터셋의 경우, 투영행렬/전역변환은 단순화(또는 항등) + ERP 전용 변환은 래스터라이저 내부에서 처리. Python 측에서는 일관된 텐서 형태만 맞추면 됨.
-- (선택) ERP 손실에서 위도 가중(cosine 가중) 적용을 위해 입력 이미지 차원(H, W) 기준 가중맵 제공.
+- (선택) ERP 손실에서 위도 가중(cosine 가중)은 옵션으로만 제공(기본 Off; OmniGS C++ 기본 동작에는 포함되지 않음).
 
 TODO
 - [x] `scene/cameras.py`에 `camera_type` 속성 추가 및 초기화 경로 마련
-- [ ] `scene/dataset_readers.py`에서 ERP/LONLAT 데이터셋 인식 및 `camera_type=3`로 설정
-- [ ] (옵션) ERP용 위도 가중맵 유틸 추가(`utils/image_utils.py` 또는 `utils/loss_utils.py`)
+- [x] `scene/dataset_readers.py`에서 ERP/LONLAT 데이터셋 인식 및 `camera_type=3`로 설정
+  - `camera_type.txt`/`camera_type.json` 마커 파일 우선, 경로 키워드(`lonlat`,`erp`,`ricoh360`,`360roam`,`equirect`) 차선, 이미지 종횡비(≈2:1) 휴리스틱 최후 순으로 추론
+- [x] (옵션) ERP용 위도 가중맵 유틸 추가(`utils/loss_utils.py:erp_latitude_weight_map`) — 기본 비활성(OmniGS C++ 기본 정책 준수)
 
 
 ## 3) Optimizer / 스케줄러 정렬(OmniGS 규칙)
@@ -95,16 +98,16 @@ TODO
 - [ ] (선택) `exist_since_iter` 텐서 추가 및 densify 시 전파(OmniGS와 동일 형태로 확장)
 
 
-## 5) 손실/정규화(ERP 가중 포함)
-기본 손실: L1 + λ·(1-SSIM). OmniGS 기본 λ는 `GaussianOptimizationParams.lambda_dssim` 참조. 3DGS는 fused-ssim 사용 가능.
+## 5) 손실/정규화(ERP 선택 가중)
+기본 손실: L1 + λ·(1-SSIM). OmniGS C++은 균일 가중을 사용합니다. 3DGS는 fused-ssim 사용 가능.
 
-ERP 권장 사항
-- 위도 가중(cosine weight)으로 손실 가중(ERP 픽셀의 샘플링 왜곡 보정). 구현은 `H`축 기준 cos(π·(y/H - 0.5)) 또는 sph 좌표 기반 가중 적용.
-- 깊이 정규화: ERP의 깊이 반환은 의미 보장 없음 → ERP에서는 깊이 항 비활성화 권장.
+ERP 유의사항
+- 깊이 정규화: ERP의 깊이 반환은 의미 보장 없음 → ERP에서는 깊이 항 비활성 권장(OmniGS와 동일 정책).
+- 위도 가중(cosine weight)은 OmniGS C++ 기본 동작이 아닙니다. 필요 시 옵션(opt-in)으로만 제공하고, 기본값은 Off로 유지합니다.
 
 TODO
-- [ ] `utils/loss_utils.py`에 ERP용 가중 손실 옵션 추가(플래그/파라미터로 on/off)
-- [ ] `train.py:1`에서 ERP일 때 깊이 항 비활, 가중 손실 적용 분기
+- [ ] (옵션) `train.py`에 ERP 선택 가중 손실 분기 추가(기본 Off)
+- [ ] ERP일 때 깊이 항 비활성 분기 반영
 - [ ] λ(dssim) 등 하이퍼는 OmniGS 기본값 노출/설정 가능하도록 `arguments/` 갱신
 
 
@@ -130,7 +133,11 @@ TODO
 권장 인자 추가(기본은 기존과 호환 유지):
 - `--rasterizer {diff,omnigs}`: 디폴트 `omnigs`
 - `--camera_type {pinhole,lonlat}` 또는 데이터셋에서 자동 설정
-- `--erp_weighted_loss {true|false}`
+- `--erp_weighted_loss {true|false}` (옵션, 기본 false)
+- `--skip_bottom_ratio` 파노라마(ERP) 하단 영역 무시(OmniGS C++ 동작)
+- `--densify_min_opacity` (기본 0.005)
+- `--prune_by_extent` (기본 True)
+- `--prune_big_point_after_iter` (기본 0 — 비활성)
 - `--lambda_dssim`/`--densify_*`/`--opacity_reset_interval` 등 OmniGS 기본 하이퍼 노출
 
 TODO
@@ -151,20 +158,32 @@ TODO
 - 렌더러/카메라
   - [x] `gaussian_renderer/__init__.py` Omnigs 래스터라이저로 교체 및 `camera_type` 전달
   - [x] `scene/cameras.py` `camera_type` 필드 추가, ERP 초기화 경로
-  - [ ] `scene/dataset_readers.py` ERP 데이터셋 처리 및 카메라 타입 설정
+  - [x] `scene/dataset_readers.py` ERP 데이터셋 처리 및 카메라 타입 설정
 - 학습 루프/옵티마이저/스케줄
   - [ ] `train.py` OmniGS 스케줄/den&prune 타이밍 동기화, ERP depth 비활성 분기
   - [ ] `scene/gaussian_model.py` 파라미터 그룹/스케줄 값 재점검(OmniGS와 일치)
   - [ ] (선택) `exist_since_iter` 추가 및 densify 경로 전파
 - 손실/메트릭
-  - [ ] `utils/loss_utils.py` ERP 위도 가중 옵션 추가
+  - [x] `utils/loss_utils.py` ERP 위도 가중 옵션 추가(옵션, 기본 Off)
+  - [ ] `train.py` ERP 하단 무시(skip_bottom_ratio) 손실/리포팅 반영(OmniGS 동작 정렬)
   - [ ] `metrics.py`(선택) 가중 PSNR/L1 병행 보고 옵션
 - 설정/문서
   - [ ] `arguments/*` 새 인자 추가, `README.md`/`docs` 사용법 갱신
   - [ ] `requirements.txt`에 `submodules/omnigs_rasterization` 설치 안내(개발환경 문서화)
 
 
-## 11) 검증 플랜(스모크 → 기능)
+## 11) 정합성 보완(계획)
+- 과잉(옵션화 필요)
+  - ERP latitude cosine 가중: OmniGS C++ 기본 동작 아님 → 옵션 제공(기본 Off)
+  - Python 노출 보정(exposure) 학습: OmniGS C++에 없음 → 기본 Off 권장
+- 누락(정합성 보완 필요)
+  - 손실·리포팅: ERP `skip_bottom_ratio` 적용(학습/평가 모두) — OmniGS C++ 동작과 일치시키기
+  - densify/prune 파라미터 정렬: `densify_min_opacity`(기본 0.005), `prune_by_extent` 토글, `prune_big_point_after_iter` 시점 적용
+  - (선택) `exist_since_iter` 유지·전파 로직 추가(OmniGS C++에 존재) — 우선순위 낮음
+  - (선택) 가우스 피라미드 트레이닝(times_of_use, viewer scaling 등) 관련 파라미터 — Python 포트에서는 생략 또는 별도 플래그로 제공
+  - (선택) 로깅: `training_report_interval`/이미지 기록(렌더/GT/loss) — 필요 시 최소 subset만 반영
+
+## 12) 검증 플랜(스모크 → 기능)
 - 스모크: 무작위 입력으로 PINHOLE/ERP 각각 forward/backward 통과, 출력 텐서 형상/유한성 체크
 - 기능: 단기 학습(수천 iter)에서 loss 감소/포인트 수 변화(densify) 관찰, prune 정상 동작 확인
 - 회귀: 주요 하이퍼(λ_dssim/percent_dense/interval) 변화 시 품질/속도 영향 벤치 기록
@@ -172,6 +191,8 @@ TODO
 진행 현황
 - [x] 비CUDA 단위 테스트: PINHOLE/ERP camera_type 전달 및 tanfov 기본값 검증
 - [x] CUDA 스모크: OmniGS 래스터라이저 GPU forward(색상/깊이) 통과(PINHOLE)
+- [x] 카메라/데이터 파이프라인(ERP) 스모크: dataset→camera_type 전달, ERP 위도 가중 유틸 단위 테스트 추가
+- [ ] ERP 하단 무시(skip_bottom_ratio) 옵션: 구현/테스트 예정(OmniGS C++ 정렬)
 
 
 ## 부록: 주요 차이 정리(요약)
