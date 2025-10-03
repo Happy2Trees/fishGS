@@ -20,7 +20,8 @@ class Camera(nn.Module):
     def __init__(self, resolution, colmap_id, R, T, FoVx, FoVy, depth_params, image, invdepthmap,
                  image_name, uid,
                  trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda",
-                 train_test_exp = False, is_test_dataset = False, is_test_view = False
+                 train_test_exp = False, is_test_dataset = False, is_test_view = False,
+                 camera_type: int = 1,
                  ):
         super(Camera, self).__init__()
 
@@ -31,6 +32,7 @@ class Camera(nn.Module):
         self.FoVx = FoVx
         self.FoVy = FoVy
         self.image_name = image_name
+        self.camera_type = int(camera_type)
 
         try:
             self.data_device = torch.device(data_device)
@@ -89,15 +91,15 @@ class Camera(nn.Module):
         self.camera_center = self.world_view_transform.inverse()[3, :3]
         
 class MiniCam:
-    def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform):
+    def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform, camera_type: int = 1):
         self.image_width = width
         self.image_height = height    
         self.FoVy = fovy
         self.FoVx = fovx
         self.znear = znear
         self.zfar = zfar
+        self.camera_type = int(camera_type)
         self.world_view_transform = world_view_transform
         self.full_proj_transform = full_proj_transform
         view_inv = torch.inverse(self.world_view_transform)
         self.camera_center = view_inv[3][:3]
-

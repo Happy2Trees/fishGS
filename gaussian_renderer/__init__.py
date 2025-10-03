@@ -11,11 +11,14 @@
 
 import torch
 import math
-from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from scene.gaussian_model import GaussianModel
+from typing import TYPE_CHECKING
+from omnigs_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from utils.sh_utils import eval_sh
 
-def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False):
+if TYPE_CHECKING:  # avoid heavy import at runtime
+    from scene.gaussian_model import GaussianModel
+
+def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, scaling_modifier = 1.0, separate_sh = False, override_color = None, use_trained_exp=False):
     """
     Render the scene. 
     
@@ -30,8 +33,13 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         pass
 
     # Set up rasterization configuration
-    tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
-    tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
+    camera_type = getattr(viewpoint_camera, "camera_type", 1)
+    if camera_type == 3:
+        tanfovx = 1.0
+        tanfovy = 1.0
+    else:
+        tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
+        tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
@@ -45,8 +53,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
-        debug=pipe.debug,
-        antialiasing=pipe.antialiasing
+        camera_type=camera_type,
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -126,3 +133,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         }
     
     return out
+
+
+def GaussianModel(*args, **kwargs):  
+    from scene.gaussian_model import GaussianModel as _GM
+    return _GM(*args, **kwargs)
