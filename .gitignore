@@ -12,3 +12,5 @@ tensorboard_3d
 screenshots
 debug_*.png
 debug_*.jpg
+\n+# Local datasets (large); do not commit
+data/

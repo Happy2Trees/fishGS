@@ -45,6 +45,11 @@ class Scene:
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.depths, args.eval)
+        elif os.path.exists(os.path.join(args.source_path, "data_views.json")) and \
+             os.path.exists(os.path.join(args.source_path, "data_extrinsics.json")):
+            print("Found OpenMVG files, assuming 360Roam ERP data set!")
+            from scene.dataset_readers import readOpenMVG360SceneInfo
+            scene_info = readOpenMVG360SceneInfo(args.source_path, args.eval, args.train_test_exp)
         else:
             assert False, "Could not recognize scene type!"
 

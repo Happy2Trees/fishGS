@@ -22,6 +22,8 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
+from pathlib import Path
+import math
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -123,9 +125,20 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, depths_params, images_fold
 def fetchPly(path):
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
+    names = vertices.data.dtype.names
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
-    colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    # colors: support both ('red','green','blue') and ('r','g','b')
+    if all(k in names for k in ('red','green','blue')):
+        colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
+    elif all(k in names for k in ('r','g','b')):
+        colors = np.vstack([vertices['r'], vertices['g'], vertices['b']]).T / 255.0
+    else:
+        colors = np.ones_like(positions)  # fallback white
+    # normals: optional
+    if all(k in names for k in ('nx','ny','nz')):
+        normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    else:
+        normals = np.zeros_like(positions)
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
 def storePly(path, xyz, rgb):
@@ -372,3 +385,155 @@ sceneLoadTypeCallbacks = {
     "Colmap": readColmapSceneInfo,
     "Blender" : readNerfSyntheticInfo
 }
+
+# ----------------- OpenMVG 360Roam (ERP) Loader -----------------
+
+def _read_txt_list(path: str) -> set:
+    names = set()
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                s = line.strip()
+                if s:
+                    names.add(s)
+    except FileNotFoundError:
+        pass
+    return names
+
+def _read_openmvg_views(views_json_path: str) -> dict:
+    """Return dict: view_id -> {filename, width, height, id_pose}.
+    Uses OpenMVG-like JSON produced for 360Roam.
+    """
+    with open(views_json_path, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+    views = obj.get("views", [])
+    out = {}
+    for it in views:
+        key = it.get("key")
+        data = (((it.get("value") or {}).get("ptr_wrapper") or {}).get("data") or {})
+        filename = data.get("filename")
+        width = int(data.get("width")) if data.get("width") is not None else 0
+        height = int(data.get("height")) if data.get("height") is not None else 0
+        id_pose = data.get("id_pose")
+        if key is None or filename is None or id_pose is None:
+            continue
+        out[int(key)] = {
+            "filename": filename,
+            "width": width,
+            "height": height,
+            "id_pose": int(id_pose),
+        }
+    return out
+
+def _read_openmvg_extrinsics(extr_json_path: str) -> dict:
+    """Return dict: pose_id -> {Rcw(3x3 np.array), C(3,)}"""
+    with open(extr_json_path, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+    extrinsics = obj.get("extrinsics", [])
+    out = {}
+    for it in extrinsics:
+        key = it.get("key")
+        val = (it.get("value") or {})
+        R = val.get("rotation")
+        C = val.get("center")
+        if key is None or R is None or C is None:
+            continue
+        Rcw = np.array(R, dtype=np.float32)
+        C = np.array(C, dtype=np.float32)
+        out[int(key)] = {"Rcw": Rcw, "C": C}
+    return out
+
+def readOpenMVG360SceneInfo(path, eval, train_test_exp):
+    """Load ERP(OpenMVG) dataset like 360Roam.
+
+    Expected files under `path`:
+      - data_views.json, data_extrinsics.json, images/, train.txt, test.txt
+      - pcd.ply as initial point cloud
+    """
+    views_path = os.path.join(path, "data_views.json")
+    extr_path = os.path.join(path, "data_extrinsics.json")
+    images_dir = os.path.join(path, "images")
+    train_list = os.path.join(path, "train.txt")
+    test_list = os.path.join(path, "test.txt")
+
+    assert os.path.isfile(views_path) and os.path.isfile(extr_path), \
+        f"OpenMVG JSON not found under {path}"
+
+    # Split control: only honor test.txt when eval=True (pipeline-wide convention)
+    train_names = _read_txt_list(train_list)
+    test_names = _read_txt_list(test_list) if eval else set()
+    use_filter = bool(train_names or test_names)
+    allowed = train_names.union(test_names) if use_filter else None
+
+    view_map = _read_openmvg_views(views_path)
+    extr_map = _read_openmvg_extrinsics(extr_path)
+
+    cam_infos_unsorted = []
+    missing_extr = 0
+    for key, v in view_map.items():
+        filename = v["filename"]
+        stem = Path(filename).stem
+        if allowed is not None and stem not in allowed:
+            continue
+
+        pose_id = v["id_pose"]
+        if pose_id not in extr_map:
+            missing_extr += 1
+            continue
+
+        width = v["width"]
+        height = v["height"]
+        Rcw = extr_map[pose_id]["Rcw"].astype(np.float32)
+        C = extr_map[pose_id]["C"].astype(np.float32)
+
+        # Convert OpenMVG (Rcw, C) to our R, T convention (COLMAP-like)
+        tvec = (-Rcw @ C.reshape(3,))
+        R = Rcw.transpose()  # camera-to-world rotation stored as transposed, matching CUDA expectations
+        T = tvec
+
+        image_path = os.path.join(images_dir, filename)
+        image_name = filename  # keep extension for uniqueness
+
+        # ERP placeholder FoVs (not used by ERP rasterizer; it uses camera_type)
+        FovX = np.pi / 2.0
+        FovY = np.pi / 2.0
+
+        is_test = (stem in test_names)
+
+        cam_infos_unsorted.append(CameraInfo(
+            uid=int(key), R=R, T=T, FovY=FovY, FovX=FovX, depth_params=None,
+            image_path=image_path, image_name=image_name, depth_path="",
+            width=width, height=height, is_test=is_test, camera_type=3,
+        ))
+
+    if missing_extr > 0:
+        print(f"[OpenMVG360] Warning: {missing_extr} views skipped due to missing extrinsics")
+
+    cam_infos = sorted(cam_infos_unsorted, key=lambda x: x.image_name)
+
+    # Train/Test lists honoring train_test_exp semantics (same as COLMAP loader)
+    train_cam_infos = [c for c in cam_infos if train_test_exp or not c.is_test]
+    test_cam_infos = [c for c in cam_infos if c.is_test]
+
+    # Compute normalization (camera-based extent)
+    nerf_normalization = getNerfppNorm(train_cam_infos)
+
+    # Use provided initial PLY
+    ply_path = os.path.join(path, "pcd.ply")
+    if not os.path.isfile(ply_path):
+        raise FileNotFoundError(f"Initial PLY not found: {ply_path}")
+    try:
+        pcd = fetchPly(ply_path)
+    except Exception as e:
+        print(f"[OpenMVG360] Failed to read PLY at {ply_path}: {e}")
+        pcd = None
+
+    scene_info = SceneInfo(
+        point_cloud=pcd,
+        train_cameras=train_cam_infos,
+        test_cameras=test_cam_infos,
+        nerf_normalization=nerf_normalization,
+        ply_path=ply_path,
+        is_nerf_synthetic=False,
+    )
+    return scene_info
