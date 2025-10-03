@@ -56,6 +56,9 @@ class ModelParams(ParamGroup):
         self.train_test_exp = False
         self.data_device = "cuda"
         self.eval = False
+        # Camera type override for loader: 'auto'|'pinhole'|'lonlat'
+        # Default keeps dataset-driven inference.
+        self.camera_type = "auto"
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -69,6 +72,8 @@ class PipelineParams(ParamGroup):
         self.compute_cov3D_python = False
         self.debug = False
         self.antialiasing = False
+        # Rasterizer backend selection: 'omnigs' (default) or 'diff'
+        self.rasterizer = "omnigs"
         super().__init__(parser, "Pipeline Parameters")
 
 class OptimizationParams(ParamGroup):

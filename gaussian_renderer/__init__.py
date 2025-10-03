@@ -12,8 +12,30 @@
 import torch
 import math
 from typing import TYPE_CHECKING
-from omnigs_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from omnigs_rasterization import mark_visible as _omnigs_mark_visible
+
+# Optional backends: prefer OmniGS but allow 'diff' for compatibility
+try:  # OmniGS backend (preferred)
+    from omnigs_rasterization import (
+        GaussianRasterizationSettings as OmniGS_Settings,
+        GaussianRasterizer as OmniGS_Rasterizer,
+    )
+    from omnigs_rasterization import mark_visible as _omnigs_mark_visible
+except Exception:  # pragma: no cover - tests may stub this
+    OmniGS_Settings = None
+    OmniGS_Rasterizer = None
+    _omnigs_mark_visible = None
+
+try:  # 3DGS original backend
+    from diff_gaussian_rasterization import (
+        GaussianRasterizationSettings as Diff_Settings,
+        GaussianRasterizer as Diff_Rasterizer,
+    )
+except Exception:  # pragma: no cover
+    Diff_Settings = None
+    Diff_Rasterizer = None
+
+# Public alias for tests to monkeypatch
+GaussianRasterizer = OmniGS_Rasterizer if OmniGS_Rasterizer is not None else Diff_Rasterizer
 from utils.sh_utils import eval_sh
 
 if TYPE_CHECKING:  # avoid heavy import at runtime
@@ -42,22 +64,48 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
         tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
         tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
 
-    raster_settings = GaussianRasterizationSettings(
-        image_height=int(viewpoint_camera.image_height),
-        image_width=int(viewpoint_camera.image_width),
-        tanfovx=tanfovx,
-        tanfovy=tanfovy,
-        bg=bg_color,
-        scale_modifier=scaling_modifier,
-        viewmatrix=viewpoint_camera.world_view_transform,
-        projmatrix=viewpoint_camera.full_proj_transform,
-        sh_degree=pc.active_sh_degree,
-        campos=viewpoint_camera.camera_center,
-        prefiltered=False,
-        camera_type=camera_type,
-    )
-
-    rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+    # Choose rasterizer backend
+    backend = getattr(pipe, "rasterizer", "omnigs")
+    if backend == "diff":
+        if Diff_Settings is None or Diff_Rasterizer is None:
+            raise RuntimeError("diff_gaussian_rasterization is not available")
+        raster_settings = Diff_Settings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            debug=getattr(pipe, "debug", False),
+            antialiasing=getattr(pipe, "antialiasing", False),
+        )
+        rasterizer = Diff_Rasterizer(raster_settings=raster_settings)
+        using_omnigs = False
+    else:
+        if OmniGS_Settings is None or OmniGS_Rasterizer is None:
+            raise RuntimeError("omnigs_rasterization is not available")
+        raster_settings = OmniGS_Settings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=bg_color,
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            camera_type=camera_type,
+        )
+        rasterizer_cls = globals().get("GaussianRasterizer", OmniGS_Rasterizer)
+        rasterizer = rasterizer_cls(raster_settings=raster_settings)
+        using_omnigs = True
 
     means3D = pc.get_xyz
     means2D = screenspace_points

@@ -179,7 +179,7 @@ TODO
 
 TODO
 - [x] `arguments/*.py` 확장 및 `README.md` 사용법 갱신(일부)
-- [ ] 기본값은 OmniGS 권장값으로 설정, 실험 재현성 위해 seed 인자 정리
+- [x] 기본값은 OmniGS 권장값으로 설정, 실험 재현성 위해 seed 인자 정리
 
 
 ## 9) 마이그레이션 순서(권장)

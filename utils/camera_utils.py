@@ -60,7 +60,12 @@ def loadCam(args, id, cam_info, resolution_scale, is_nerf_synthetic, is_test_dat
         scale = float(global_down) * float(resolution_scale)
         resolution = (int(orig_w / scale), int(orig_h / scale))
 
-    camera_type = getattr(cam_info, "camera_type", 1)
+    # camera_type override: args.camera_type in {"auto","pinhole","lonlat"}
+    override = getattr(args, "camera_type", "auto")
+    if isinstance(override, str) and override.lower() in {"pinhole", "lonlat"}:
+        camera_type = 1 if override.lower() == "pinhole" else 3
+    else:
+        camera_type = getattr(cam_info, "camera_type", 1)
     return Camera(resolution, colmap_id=cam_info.uid, R=cam_info.R, T=cam_info.T, 
                   FoVx=cam_info.FovX, FoVy=cam_info.FovY, depth_params=cam_info.depth_params,
                   image=image, invdepthmap=invdepthmap,
