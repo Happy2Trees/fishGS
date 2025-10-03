@@ -202,7 +202,7 @@ TODO
     - ERP depth: `camera_type==3`에서 depth L1 비활성 분기 추가
     - densify/prune: `size_threshold`를 임계 전 `0` 사용으로 정렬(None → 0)
   - [x] `scene/gaussian_model.py` 파라미터 그룹/스케줄 값 재점검(OmniGS와 일치)
-  - [ ] (선택) `exist_since_iter` 추가 및 densify 경로 전파
+  - [x] (선택) `exist_since_iter` 추가 및 densify 경로 전파
 - 손실/메트릭
   - [x] `utils/loss_utils.py` ERP 위도 가중 옵션 추가(옵션, 기본 Off)
   - [x] `train.py` ERP 하단 무시(skip_bottom_ratio) 손실/리포팅 반영(OmniGS 동작 정렬)
