@@ -152,7 +152,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         Ll1depth_pure = 0.0
         # Disable depth regularization for ERP/LONLAT cameras (OmniGS rule)
         is_erp_cam = getattr(viewpoint_cam, "camera_type", 1) == 3
-        if depth_l1_weight(iteration) > 0 and viewpoint_cam.depth_reliable and not is_erp_cam:
+        # Also disable for OmniGS backend to match C++ training behavior (color-only loss).
+        using_diff_backend = getattr(pipe, "rasterizer", "omnigs") == "diff"
+        if depth_l1_weight(iteration) > 0 and viewpoint_cam.depth_reliable and not is_erp_cam and using_diff_backend:
             invDepth = render_pkg["depth"]
             mono_invdepth = viewpoint_cam.invdepthmap.cuda()
             depth_mask = viewpoint_cam.depth_mask.cuda()

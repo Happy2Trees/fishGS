@@ -85,7 +85,6 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
             antialiasing=getattr(pipe, "antialiasing", False),
         )
         rasterizer = Diff_Rasterizer(raster_settings=raster_settings)
-        using_omnigs = False
     else:
         if OmniGS_Settings is None or OmniGS_Rasterizer is None:
             raise RuntimeError("omnigs_rasterization is not available")
@@ -105,7 +104,6 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
         )
         rasterizer_cls = globals().get("GaussianRasterizer", OmniGS_Rasterizer)
         rasterizer = rasterizer_cls(raster_settings=raster_settings)
-        using_omnigs = True
 
     means3D = pc.get_xyz
     means2D = screenspace_points
@@ -144,7 +142,7 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     if separate_sh:
-        rendered_image, radii, depth_image = rasterizer(
+        ret = rasterizer(
             means3D = means3D,
             means2D = means2D,
             dc = dc,
@@ -155,7 +153,7 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
             rotations = rotations,
             cov3D_precomp = cov3D_precomp)
     else:
-        rendered_image, radii, depth_image = rasterizer(
+        ret = rasterizer(
             means3D = means3D,
             means2D = means2D,
             shs = shs,
@@ -164,6 +162,19 @@ def render(viewpoint_camera, pc: "GaussianModel", pipe, bg_color: torch.Tensor, 
             scales = scales,
             rotations = rotations,
             cov3D_precomp = cov3D_precomp)
+
+    # Normalize rasterizer return signature across backends.
+    # OmniGS returns (image, radii, depth). diff backend may return only (image, radii).
+    if isinstance(ret, tuple) and len(ret) == 3:
+        rendered_image, radii, depth_image = ret
+    elif isinstance(ret, tuple) and len(ret) == 2:
+        rendered_image, radii = ret
+        # Create a zero depth map matching HxW
+        H = int(viewpoint_camera.image_height)
+        W = int(viewpoint_camera.image_width)
+        depth_image = torch.zeros(1, H, W, device=rendered_image.device, dtype=rendered_image.dtype)
+    else:
+        raise RuntimeError("Unexpected rasterizer return format")
         
     # Apply exposure to rendered image (training only)
     if use_trained_exp:
@@ -196,6 +207,8 @@ def mark_visible(viewpoint_camera, positions: torch.Tensor) -> torch.Tensor:
     - For ERP/LONLAT cameras (camera_type==3), all points are visible by design.
     """
     camera_type = getattr(viewpoint_camera, "camera_type", 1)
+    if _omnigs_mark_visible is None:
+        raise RuntimeError("omnigs_rasterization is not available: mark_visible requires the extension to be built")
     return _omnigs_mark_visible(
         positions,
         viewpoint_camera.world_view_transform,
