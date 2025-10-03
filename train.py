@@ -21,7 +21,7 @@ import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr, weighted_psnr
 from argparse import ArgumentParser, Namespace
-from arguments import ModelParams, PipelineParams, OptimizationParams
+from arguments import ModelParams, PipelineParams, OptimizationParams, get_args_with_yaml, dump_args_to_yaml
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -48,13 +48,13 @@ def compute_size_threshold(iteration: int, prune_big_point_after_iter: int) -> i
     return 20 if (prune_big_point_after_iter > 0 and iteration > prune_big_point_after_iter) else 0
 
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, full_args: Namespace = None):
 
     if not SPARSE_ADAM_AVAILABLE and opt.optimizer_type == "sparse_adam":
         sys.exit(f"Trying to use sparse adam but it is not installed, please install the correct rasterizer using pip install [3dgs_accel].")
 
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    tb_writer = prepare_output_and_logger(dataset, full_args)
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
@@ -246,7 +246,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-def prepare_output_and_logger(args):    
+def prepare_output_and_logger(args, full_args: Namespace = None):    
     if not args.model_path:
         if os.getenv('OAR_JOB_ID'):
             unique_str=os.getenv('OAR_JOB_ID')
@@ -259,6 +259,12 @@ def prepare_output_and_logger(args):
     os.makedirs(args.model_path, exist_ok = True)
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
+    # Also store a YAML snapshot of the effective configuration if available
+    if full_args is not None:
+        try:
+            dump_args_to_yaml(full_args, os.path.join(args.model_path, "cfg_args.yaml"))
+        except Exception as e:
+            print(f"Warning: failed to dump YAML config: {e}")
 
     # Create Tensorboard writer
     tb_writer = None
@@ -341,6 +347,10 @@ if __name__ == "__main__":
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
+    # YAML config helpers
+    parser.add_argument('--config', '-c', type=str, default=None, help='Path to YAML config file to pre-populate arguments.')
+    parser.add_argument('--dump_config', type=str, default=None, help='Write the final, merged configuration to this YAML path and exit.')
+    parser.add_argument('--print_params', action='store_true', default=False, help='Print available parameters and defaults, then exit.')
     parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
@@ -352,7 +362,21 @@ if __name__ == "__main__":
     parser.add_argument('--disable_viewer', action='store_true', default=False)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
-    args = parser.parse_args(sys.argv[1:])
+    # Parse args with YAML and stored cfg_args merging
+    args = get_args_with_yaml(parser)
+
+    if args.print_params:
+        # Print a concise parameter reference by introspecting defaults
+        print("\n[Parameters — defaults]\n")
+        defaults = vars(parser.parse_args([]))
+        for key in sorted(defaults.keys()):
+            print(f"{key}: {defaults[key]}")
+        sys.exit(0)
+
+    if args.dump_config:
+        dump_args_to_yaml(args, args.dump_config)
+        print(f"Wrote merged config to {args.dump_config}")
+        sys.exit(0)
     args.save_iterations.append(args.iterations)
     
     print("Optimizing " + args.model_path)
@@ -364,7 +388,7 @@ if __name__ == "__main__":
     if not args.disable_viewer:
         network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
+    training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, full_args=args)
 
     # All done
     print("\nTraining complete.")

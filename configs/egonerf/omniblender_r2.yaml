@@ -1,0 +1,14 @@
+# Replace paths before use
+model:
+  source_path: /ABSOLUTE/PATH/TO/EgoNeRF/OmniBlender/<sequence>
+  model_path: output/egonerf/omniblender/<sequence>_r2
+  resolution: 2
+
+optimization:
+  iterations: 32010
+  opacity_lr: 0.05
+  prune_by_extent: false
+
+train:
+  disable_viewer: true
+

@@ -2,3 +2,4 @@ plyfile
 tqdm
 joblib
 opencv-python
+pyyaml

@@ -18,7 +18,7 @@ from gaussian_renderer import render
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
-from arguments import ModelParams, PipelineParams, get_combined_args
+from arguments import ModelParams, PipelineParams, get_args_with_yaml, dump_args_to_yaml
 from gaussian_renderer import GaussianModel
 try:
     from diff_gaussian_rasterization import SparseGaussianAdam
@@ -68,7 +68,22 @@ if __name__ == "__main__":
     parser.add_argument("--skip_train", action="store_true")
     parser.add_argument("--skip_test", action="store_true")
     parser.add_argument("--quiet", action="store_true")
-    args = get_combined_args(parser)
+    # YAML helpers to mirror train.py
+    parser.add_argument('--config', '-c', type=str, default=None, help='Path to YAML config file to pre-populate arguments.')
+    parser.add_argument('--dump_config', type=str, default=None, help='Write the final, merged configuration to this YAML path and exit.')
+    parser.add_argument('--print_params', action='store_true', default=False, help='Print available parameters and defaults, then exit.')
+
+    args = get_args_with_yaml(parser)
+    if args.print_params:
+        print("\n[Parameters — defaults]\n")
+        defaults = vars(parser.parse_args([]))
+        for key in sorted(defaults.keys()):
+            print(f"{key}: {defaults[key]}")
+        raise SystemExit(0)
+    if args.dump_config:
+        dump_args_to_yaml(args, args.dump_config)
+        print(f"Wrote merged config to {args.dump_config}")
+        raise SystemExit(0)
     print("Rendering " + args.model_path)
 
     # Initialize system state (RNG)

@@ -1,0 +1,14 @@
+# Replace paths before use
+model:
+  source_path: /ABSOLUTE/PATH/TO/EgoNeRF/Ricoh360/<sequence>
+  model_path: output/egonerf/ricoh360/<sequence>_r2
+  resolution: 2
+
+optimization:
+  iterations: 32010
+  opacity_lr: 0.05
+  prune_by_extent: false
+
+train:
+  disable_viewer: true
+

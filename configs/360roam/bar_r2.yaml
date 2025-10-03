@@ -1,0 +1,13 @@
+model:
+  source_path: data/360Roam/bar
+  model_path: output/360roam/bar_r2
+  resolution: 2
+
+optimization:
+  iterations: 32010
+  opacity_lr: 0.05
+  skip_bottom_ratio: 0.063
+
+train:
+  disable_viewer: true
+
