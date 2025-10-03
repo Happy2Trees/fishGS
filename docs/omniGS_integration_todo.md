@@ -227,6 +227,7 @@ TODO
   - 깊이 L1 분기: 학습시 깊이 L1 정규화는 ERP 카메라(타입 3)에서 비활성, 추가로 OmniGS 백엔드에서도 C++ 레퍼런스(색상 기반 L1+SSIM) 정합을 위해 비활성. 즉, 깊이 항은 diff 백엔드에 한해 활성.
   - 체크포인트 정합: `scene/gaussian_model.py`의 `capture/restore`에 `exist_since_iter` 텐서 포함(구 체크포인트 호환 유지). densify/clone/split/prune 경로에서의 존재 이력 전파가 재학습 시에도 보존됨.
   - 기타: 사용되지 않던 지역 변수 정리(`using_omnigs`).
+  - separate_sh 가드: `separate_sh`(DC/rest 분리 전달)는 diff 백엔드에서만 활성. OmniGS 백엔드에서는 내부적으로 강제 비활성 처리(호출 시그니처 충돌 방지). `train.py` 호출부에서도 백엔드에 따라 분기 적용.
 
 주의/남은 항목
 - `separate_sh` 경로는 diff 가속(SparseAdam)과의 호환을 위해 유지되며, OmniGS 백엔드에서의 사용은 비권장입니다(OmniGS 포워드 시그니처와 상이). 필요 시 OmniGS에도 호환 계층을 추가하거나 백엔드에 따라 강제 비활성화하는 방향을 검토 바랍니다. (섹션 1 TODO)
