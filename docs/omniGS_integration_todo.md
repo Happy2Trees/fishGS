@@ -42,7 +42,8 @@ OmniGS 래스터라이저는 3DGS와 유사한 Python API를 제공하되, `came
 TODO
 - [x] `gaussian_renderer/__init__.py`에서 래스터라이저 import/호출부 교체(동일 반환 형태 유지: render/radii/depth)
 - [x] `GaussianRasterizationSettings`에 `camera_type` 전달 경로 추가
-- [ ] (옵션) 기존 `separate_sh` 경로 유지 검토(3DGS와 동일 인터페이스)
+- [x] (옵션) 기존 `separate_sh` 경로 유지 검토(3DGS와 동일 인터페이스)
+  - 처리: separate_sh는 diff 백엔드에서만 활성. OmniGS 백엔드에서는 내부적으로 강제 비활성화(시그니처 충돌 방지)
 - [x] ERP 카메라에서 `tanfovx/tanfovy` 사용 여부 점검 및 안전 기본값 설정(예: 1.0)
 
 
